@@ -62,6 +62,7 @@ jobs:
           STEAM_REFRESH_TOKENS: ${{ secrets.STEAM_REFRESH_TOKENS }}
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
+          GH_PAT_DATA_REPOS: ${{ secrets.OV_DATA_PAT }}
           ANON_SESSION_COUNT: ${{ github.event.inputs.session_count || '10' }}
           CONCURRENT_DOWNLOADS_PER_SESSION: ${{ github.event.inputs.concurrent_per_session || '10' }}
           BATCH_SIZE: ${{ github.event.inputs.batch_size || '2000' }}
