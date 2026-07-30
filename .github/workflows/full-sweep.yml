@@ -1,0 +1,113 @@
+name: Steam PICS Full Sweep (Public Runner)
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+concurrency:
+  group: ovdata-apps-branch
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1300
+    steps:
+      - name: Checkout private code
+        uses: actions/checkout@v4
+        with:
+          repository: 3vil3vo/OV-AppList
+          token: ${{ secrets.OV_DATA_PAT }}
+          path: code
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: |
+          cd code
+          npm ci
+      - name: Run full PICS sweep
+        env:
+          STEAM_REFRESH_TOKEN: ${{ secrets.STEAM_REFRESH_TOKEN }}
+          STEAM_REFRESH_TOKENS: ${{ secrets.STEAM_REFRESH_TOKENS }}
+          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+        run: |
+          cd code
+          node sweep_full_daily.js
+      - name: Read merge counts
+        id: counts
+        if: always()
+        run: |
+          cd code
+          if [ -f merge_counts.json ]; then
+            ADDED=$(jq -r '.added' merge_counts.json)
+            OVERWRITTEN=$(jq -r '.overwritten' merge_counts.json)
+            RESOLVED=$(jq -r '.resolved // 0' merge_counts.json)
+            echo "added=$ADDED" >> $GITHUB_OUTPUT
+            echo "overwritten=$OVERWRITTEN" >> $GITHUB_OUTPUT
+            echo "resolved=$RESOLVED" >> $GITHUB_OUTPUT
+          else
+            echo "added=0" >> $GITHUB_OUTPUT
+            echo "overwritten=0" >> $GITHUB_OUTPUT
+            echo "resolved=0" >> $GITHUB_OUTPUT
+          fi
+      - name: Commit and push to OV-AppList (main)
+        if: success()
+        run: |
+          cd code
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          shopt -s nullglob
+          FILES=(AppList.json AppList_part*.json)
+          if [ ${#FILES[@]} -gt 0 ]; then
+            git add -A -- AppList.json AppList_part*.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Add ${{ steps.counts.outputs.added }} apps (${{ steps.counts.outputs.overwritten }} overwritten)"
+              git fetch origin main
+              if ! git rebase origin/main; then
+                git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
+                git add -A -- AppList.json AppList_part*.json
+                git rebase --continue
+              fi
+              git push origin HEAD:main
+            else
+              echo "No functional changes to AppList contents detected."
+            fi
+          else
+            echo "No matching AppList output files found to commit."
+          fi
+      - name: Commit and push to OV-Data (apps branch)
+        if: success()
+        env:
+          OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
+        run: |
+          cd code
+          git clone --single-branch --branch apps "https://x-access-token:${OV_DATA_PAT}@github.com/3vil3vo/OV-Data.git" ../ovdata
+          shopt -s nullglob
+          rm -f ../ovdata/AppList.json ../ovdata/AppList_part*.json
+          if ls AppList.json AppList_part*.json >/dev/null 2>&1; then
+            cp AppList.json ../ovdata/ 2>/dev/null || true
+            cp AppList_part*.json ../ovdata/ 2>/dev/null || true
+          fi
+          cd ../ovdata
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TARGET_FILES=(AppList.json AppList_part*.json)
+          if [ ${#TARGET_FILES[@]} -gt 0 ]; then
+            git add -A -- AppList.json AppList_part*.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Add ${{ steps.counts.outputs.added }} apps (${{ steps.counts.outputs.overwritten }} overwritten)"
+              git fetch origin apps
+              if ! git rebase origin/apps; then
+                git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
+                git add -A -- AppList.json AppList_part*.json
+                git rebase --continue
+              fi
+              git push origin HEAD:apps
+            else
+              echo "No changes to downstream branch files detected."
+            fi
+          else
+            echo "No chunk targets present in clone path."
+          fi
