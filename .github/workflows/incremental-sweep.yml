@@ -14,13 +14,13 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Checkout private code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 3vil3vo/OV-AppList
           token: ${{ secrets.OV_DATA_PAT }}
           path: code
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
       - name: Install dependencies
