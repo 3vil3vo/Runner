@@ -32,14 +32,14 @@ jobs:
     timeout-minutes: 340
     steps:
       - name: Checkout private OV-DataSuite
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 3vil3vo/OV-DataSuite
           token: ${{ secrets.OV_DATA_PAT }}
           path: OV-DataSuite
           fetch-depth: 0
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'npm'
