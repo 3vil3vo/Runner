@@ -19,14 +19,29 @@ jobs:
           repository: 3vil3vo/OV-AppList
           token: ${{ secrets.OV_DATA_PAT }}
           path: code
+
+      - name: Checkout OV-Data (main) for PICS tokens
+        uses: actions/checkout@v7
+        with:
+          repository: 3vil3vo/OV-Data
+          token: ${{ secrets.OV_DATA_PAT }}
+          path: ovdata
+          ref: main
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
+
       - name: Install dependencies
         run: |
           cd code
           npm ci
+
+      - name: Copy token file from OV-Data to code directory
+        run: |
+          cp ovdata/pics_access_tokens.json code/
+
       - name: Run auto sweep & merge
         env:
           STEAM_REFRESH_TOKEN: ${{ secrets.STEAM_REFRESH_TOKEN }}
@@ -34,6 +49,7 @@ jobs:
         run: |
           cd code
           node sweep_auto.js
+
       - name: Read counts
         id: counts
         run: |
@@ -42,6 +58,7 @@ jobs:
           OVERWRITTEN=$(cat overwritten_count.txt)
           echo "added=$ADDED" >> $GITHUB_OUTPUT
           echo "overwritten=$OVERWRITTEN" >> $GITHUB_OUTPUT
+
       - name: Commit and push to OV-AppList (main)
         run: |
           cd code
@@ -50,7 +67,8 @@ jobs:
           shopt -s nullglob
           git add -A -- AppList.json AppList_part*.json
           if ! git diff --cached --quiet; then
-            git commit -m "Add ${{ steps.counts.outputs.added }} apps (${{ steps.counts.outputs.overwritten }} overwritten)"
+            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            git commit -m "Auto sweep – added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} – $TIMESTAMP"
             git fetch origin main
             if ! git rebase origin/main; then
               git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
@@ -61,6 +79,7 @@ jobs:
           else
             echo "No changes."
           fi
+
       - name: Push to OV-Data (apps branch)
         env:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
@@ -81,7 +100,8 @@ jobs:
           if ! git diff --cached --quiet; then
             ADDED=$(cat ../code/new_apps_count.txt)
             OVERWRITTEN=$(cat ../code/overwritten_count.txt)
-            git commit -m "Add $ADDED apps ($OVERWRITTEN overwritten)"
+            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            git commit -m "Auto sweep (apps branch) – added $ADDED apps, overwritten $OVERWRITTEN – $TIMESTAMP"
             git fetch origin apps
             if ! git rebase origin/apps; then
               git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
