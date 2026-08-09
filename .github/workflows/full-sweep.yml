@@ -3,6 +3,12 @@ on:
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
+    inputs:
+      refresh_ov_pics:
+        description: 'Delete all files in OV-PICS before writing fresh sweep'
+        required: false
+        default: false
+        type: boolean
 concurrency:
   group: ovdata-apps-branch
   cancel-in-progress: false
@@ -19,22 +25,46 @@ jobs:
           repository: 3vil3vo/OV-AppList
           token: ${{ secrets.OV_DATA_PAT }}
           path: code
+
+      - name: Checkout OV-Data (main) for PICS tokens
+        uses: actions/checkout@v7
+        with:
+          repository: 3vil3vo/OV-Data
+          token: ${{ secrets.OV_DATA_PAT }}
+          path: ovdata
+          ref: main
+
+      - name: Checkout OV-PICS (for output)
+        uses: actions/checkout@v7
+        with:
+          repository: 3vil3vo/OV-PICS
+          token: ${{ secrets.OV_DATA_PAT }}
+          path: ovpics
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
+
       - name: Install dependencies
         run: |
           cd code
           npm ci
+
+      - name: Copy token file from OV-Data to code directory
+        run: |
+          cp ovdata/pics_access_tokens.json code/
+
       - name: Run full PICS sweep
         env:
           STEAM_REFRESH_TOKEN: ${{ secrets.STEAM_REFRESH_TOKEN }}
           STEAM_REFRESH_TOKENS: ${{ secrets.STEAM_REFRESH_TOKENS }}
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          REFRESH_OV_PICS: ${{ github.event.inputs.refresh_ov_pics == 'true' && '1' || '0' }}
         run: |
           cd code
           node sweep_full_daily.js
+
       - name: Read merge counts
         id: counts
         if: always()
@@ -52,6 +82,23 @@ jobs:
             echo "overwritten=0" >> $GITHUB_OUTPUT
             echo "resolved=0" >> $GITHUB_OUTPUT
           fi
+
+      - name: Commit and push to OV-PICS (main)
+        if: success()
+        run: |
+          cd ovpics
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          shopt -s nullglob
+          git add -A
+          if ! git diff --cached --quiet; then
+            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            git commit -m "Full PICS sweep – added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} – $TIMESTAMP"
+            git push origin HEAD:main
+          else
+            echo "No changes in OV-PICS."
+          fi
+
       - name: Commit and push to OV-AppList (main)
         if: success()
         run: |
@@ -63,7 +110,8 @@ jobs:
           if [ ${#FILES[@]} -gt 0 ]; then
             git add -A -- AppList.json AppList_part*.json
             if ! git diff --cached --quiet; then
-              git commit -m "Add ${{ steps.counts.outputs.added }} apps (${{ steps.counts.outputs.overwritten }} overwritten)"
+              TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+              git commit -m "AppList update – added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} – $TIMESTAMP"
               git fetch origin main
               if ! git rebase origin/main; then
                 git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
@@ -72,32 +120,34 @@ jobs:
               fi
               git push origin HEAD:main
             else
-              echo "No functional changes to AppList contents detected."
+              echo "No functional changes to AppList contents."
             fi
           else
-            echo "No matching AppList output files found to commit."
+            echo "No matching AppList output files found."
           fi
+
       - name: Commit and push to OV-Data (apps branch)
         if: success()
         env:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
         run: |
           cd code
-          git clone --single-branch --branch apps "https://x-access-token:${OV_DATA_PAT}@github.com/3vil3vo/OV-Data.git" ../ovdata
+          git clone --single-branch --branch apps "https://x-access-token:${OV_DATA_PAT}@github.com/3vil3vo/OV-Data.git" ../ovdata_apps
           shopt -s nullglob
-          rm -f ../ovdata/AppList.json ../ovdata/AppList_part*.json
+          rm -f ../ovdata_apps/AppList.json ../ovdata_apps/AppList_part*.json
           if ls AppList.json AppList_part*.json >/dev/null 2>&1; then
-            cp AppList.json ../ovdata/ 2>/dev/null || true
-            cp AppList_part*.json ../ovdata/ 2>/dev/null || true
+            cp AppList.json ../ovdata_apps/ 2>/dev/null || true
+            cp AppList_part*.json ../ovdata_apps/ 2>/dev/null || true
           fi
-          cd ../ovdata
+          cd ../ovdata_apps
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           TARGET_FILES=(AppList.json AppList_part*.json)
           if [ ${#TARGET_FILES[@]} -gt 0 ]; then
             git add -A -- AppList.json AppList_part*.json
             if ! git diff --cached --quiet; then
-              git commit -m "Add ${{ steps.counts.outputs.added }} apps (${{ steps.counts.outputs.overwritten }} overwritten)"
+              TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+              git commit -m "AppList update (apps branch) – added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} – $TIMESTAMP"
               git fetch origin apps
               if ! git rebase origin/apps; then
                 git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
@@ -106,8 +156,8 @@ jobs:
               fi
               git push origin HEAD:apps
             else
-              echo "No changes to downstream branch files detected."
+              echo "No changes to downstream branch files."
             fi
           else
-            echo "No chunk targets present in clone path."
+            echo "No chunk targets present."
           fi
