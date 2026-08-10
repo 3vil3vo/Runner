@@ -82,6 +82,8 @@ jobs:
           if ! git diff --cached --quiet; then
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             git commit -m "Auto sweep - added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} - $TIMESTAMP"
+            git reset --hard HEAD
+            git clean -fd
             git fetch origin main
             if ! git rebase origin/main; then
               git rebase --abort || true
@@ -115,6 +117,8 @@ jobs:
             OVERWRITTEN=$(cat ../code/overwritten_count.txt)
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             git commit -m "Auto sweep (apps branch) - added $ADDED apps, overwritten $OVERWRITTEN - $TIMESTAMP"
+            git reset --hard HEAD
+            git clean -fd
             git fetch origin apps
             if ! git rebase origin/apps; then
               git rebase --abort || true
