@@ -38,28 +38,35 @@ jobs:
           token: ${{ secrets.OV_DATA_PAT }}
           path: OV-DataSuite
           fetch-depth: 0
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'npm'
           cache-dependency-path: OV-DataSuite/scripts/package-lock.json
+
       - name: Install dependencies
         working-directory: OV-DataSuite/scripts
         run: |
           npm ci
           npm install undici --no-save
-      - name: Clone OV-PICS
+
+      - name: Clone OV-PICS and validate snapshot
         env:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
         run: |
           git clone --depth=1 "https://${OV_DATA_PAT}@github.com/3vil3vo/OV-PICS.git" OV-DataSuite/ov-pics-clone
-          git -C OV-DataSuite/ov-pics-clone config user.name "github-actions[bot]"
-          git -C OV-DataSuite/ov-pics-clone config user.email "github-actions[bot]@users.noreply.github.com"
-          mkdir -p OV-DataSuite/ov-pics-clone/PICS_Responses
+          cd OV-DataSuite/ov-pics-clone
+          test -f manifest.json
+          test -f coverage.json
+          test "$(jq -r '.complete' manifest.json)" = "true"
+          test "$(jq -r '.coverage.failedBatches' manifest.json)" = "0"
+          test "$(jq -r '.failedBatches' coverage.json)" = "0"
+          test "$(jq -r '.completedBatches' coverage.json)" = "$(jq -r '.totalBatches' coverage.json)"
+
       - name: Run fetch pipeline
         env:
-          STEAM_REFRESH_TOKENS: ${{ secrets.STEAM_REFRESH_TOKENS }}
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
           GH_PAT_DATA_REPOS: ${{ secrets.OV_DATA_PAT }}
@@ -77,65 +84,20 @@ jobs:
           if [ "${DEBUG_LOGGING}" == "true" ]; then
             set -x
           fi
-          (
-            while true; do
-              sleep 180
-              cd "${GITHUB_WORKSPACE}/OV-DataSuite"
-              PATHS=()
-              [ -f input_data/depot_keys.json ] && PATHS+=(input_data/depot_keys.json)
-              [ -f input_data/pics_access_tokens.json ] && PATHS+=(input_data/pics_access_tokens.json)
-              [ -f input_data/AppList.json ] && PATHS+=(input_data/AppList.json)
-              [ -f output_data/blacklist.json ] && PATHS+=(output_data/blacklist.json)
-              [ -f output_data/flagged.json ] && PATHS+=(output_data/flagged.json)
-              [ -f output_data/changelog.md ] && PATHS+=(output_data/changelog.md)
-              [ -d cache ] && PATHS+=(cache)
-              if [ ${#PATHS[@]} -gt 0 ]; then
-                find cache -name "*.tmp" -delete 2>/dev/null
-                git add -A -- "${PATHS[@]}" 2>/dev/null
-                if ! git diff --cached --quiet 2>/dev/null; then
-                  git commit -m "Periodic checkpoint (background)" --quiet 2>/dev/null
-                  git fetch origin main --quiet 2>/dev/null
-                  if ! git rebase --autostash origin/main --quiet 2>/dev/null; then
-                    git checkout --theirs -- "${PATHS[@]}" 2>/dev/null || true
-                    git add -A -- "${PATHS[@]}" 2>/dev/null
-                    git rebase --continue --quiet 2>/dev/null || git rebase --abort 2>/dev/null
-                  fi
-                  if git push --quiet origin HEAD:main 2>/dev/null; then
-                    echo "[background-committer] pushed local checkpoint"
-                  else
-                    echo "[background-committer] local push failed, will retry next cycle"
-                  fi
-                fi
-              fi
-              cd ov-pics-clone
-              if [ -n "$(git status --porcelain PICS_Responses 2>/dev/null)" ]; then
-                git add -A -- PICS_Responses
-                git commit -m "Periodic PICS checkpoint (background)" --quiet
-                git fetch origin main --quiet 2>/dev/null
-                if git rev-parse --verify origin/main >/dev/null 2>&1; then
-                  if ! git rebase --autostash origin/main --quiet 2>/dev/null; then
-                    git checkout --theirs -- PICS_Responses 2>/dev/null || true
-                    git add -A -- PICS_Responses 2>/dev/null
-                    git rebase --continue --quiet 2>/dev/null || git rebase --abort 2>/dev/null
-                  fi
-                fi
-                if git push --quiet origin HEAD:main 2>/dev/null; then
-                  echo "[background-committer] pushed PICS checkpoint"
-                else
-                  echo "[background-committer] PICS push failed, will retry next cycle"
-                fi
-              fi
-              cd "${GITHUB_WORKSPACE}/OV-DataSuite"
-            done
-          ) &
-          BGPID=$!
           node scripts/fetch.js
-          EXITCODE=$?
-          kill "$BGPID" 2>/dev/null || true
-          wait "$BGPID" 2>/dev/null || true
-          exit $EXITCODE
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fetch-diagnostics-${{ github.run_id }}
+          path: |
+            OV-DataSuite/run_summary.json
+            OV-DataSuite/output_data/changelog.md
+            OV-DataSuite/*.log
+
       - name: Commit and push local outputs
-        if: always()
+        if: success()
         working-directory: OV-DataSuite
         run: |
           git config user.name "github-actions[bot]"
@@ -158,36 +120,17 @@ jobs:
             git commit -m "chore: fetch run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             git fetch origin main
             if ! git rebase --autostash origin/main; then
-              git checkout --theirs -- "${PATHS[@]}" 2>/dev/null || true
-              git add -A -- "${PATHS[@]}"
-              git rebase --continue
+              git rebase --abort || true
+              echo "Concurrent branch update detected. Refusing automatic overwrite."
+              exit 1
             fi
             git push --progress origin HEAD:main
           else
             echo "No local changes to commit."
           fi
-      - name: Commit and push PICS responses to OV-PICS
-        if: always()
-        working-directory: OV-DataSuite
-        run: |
-          cd ov-pics-clone
-          if [ -n "$(git status --porcelain PICS_Responses 2>/dev/null)" ]; then
-            git add -A -- PICS_Responses
-            git commit -m "Update PICS responses $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            git fetch origin main 2>/dev/null || true
-            if git rev-parse --verify origin/main >/dev/null 2>&1; then
-              if ! git rebase --autostash origin/main; then
-                git checkout --theirs -- PICS_Responses 2>/dev/null || true
-                git add -A -- PICS_Responses
-                git rebase --continue
-              fi
-            fi
-            git push --progress origin HEAD:main
-          else
-            echo "No PICS changes to commit."
-          fi
+
       - name: Commit and push depot keys and tokens to OV-Data
-        if: always()
+        if: success()
         env:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
         working-directory: OV-DataSuite
@@ -209,47 +152,18 @@ jobs:
             git fetch origin main 2>/dev/null || true
             if git rev-parse --verify origin/main >/dev/null 2>&1; then
               if ! git rebase --autostash origin/main; then
-                git checkout --theirs -- depot_keys.json pics_access_tokens.json 2>/dev/null || true
-                git add depot_keys.json pics_access_tokens.json
-                git rebase --continue
+                git rebase --abort || true
+                echo "Concurrent branch update detected. Refusing automatic overwrite."
+                exit 1
               fi
             fi
             git push origin HEAD:main
           else
             echo "No changes to push to OV-Data."
           fi
-      - name: Update rotated Steam refresh token secret
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.OV_DATA_PAT }}
-        working-directory: OV-DataSuite
-        run: |
-          if [ -f rotated_refresh_tokens.txt ]; then
-            echo "Steam rotated a refresh token this run, updating STEAM_REFRESH_TOKENS secret."
-            gh secret set STEAM_REFRESH_TOKENS --repo "${{ github.repository }}" --body "$(cat rotated_refresh_tokens.txt)"
-          else
-            echo "No token rotation detected this run."
-          fi
-      - name: Trigger continuation run
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.OV_DATA_PAT }}
-        working-directory: OV-DataSuite
-        run: |
-          if [ -f continuation_needed.txt ] && [ "$(cat continuation_needed.txt)" == "true" ]; then
-            echo "Pending PICS work remains, triggering continuation run."
-            gh workflow run fetch.yml \
-              --repo "${{ github.repository }}" \
-              --ref "${{ github.ref_name }}" \
-              -f session_count="${{ github.event.inputs.session_count || '10' }}" \
-              -f concurrent_per_session="${{ github.event.inputs.concurrent_per_session || '10' }}" \
-              -f batch_size="${{ github.event.inputs.batch_size || '2000' }}" \
-              -f debug_logging="${{ github.event.inputs.debug_logging || 'false' }}"
-          else
-            echo "No continuation needed."
-          fi
+
       - name: Write job summary
-        if: always()
+        if: success()
         working-directory: OV-DataSuite
         run: |
           {
@@ -258,14 +172,8 @@ jobs:
             if [ -f run_summary.md ]; then
               cat run_summary.md
             else
-              echo "The fetch script did not get far enough to produce a summary. Check the job logs above for the failure."
+              echo "No summary available."
             fi
             echo ""
-            if [ -f continuation_needed.txt ] && [ "$(cat continuation_needed.txt)" == "true" ]; then
-              echo "A continuation run has been triggered to finish the remaining PICS sweep."
-            fi
-            if [ -f rotated_refresh_tokens.txt ]; then
-              echo ""
-              echo "Steam rotated a refresh token this run. The STEAM_REFRESH_TOKENS secret was updated automatically."
-            fi
+            echo "PICS archive validated from OV-PICS manifest."
           } >> "$GITHUB_STEP_SUMMARY"

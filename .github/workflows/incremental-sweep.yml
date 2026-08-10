@@ -4,7 +4,7 @@ on:
     - cron: '0 1,5,9,13,17,21 * * *'
   workflow_dispatch:
 concurrency:
-  group: ovdata-apps-branch
+  group: steam-pics-full-sweep
   cancel-in-progress: false
 permissions:
   contents: write
@@ -50,6 +50,19 @@ jobs:
           cd code
           node sweep_auto.js
 
+      - name: Validate enrichment coverage
+        run: |
+          cd code
+          if [ ! -f autosweep_coverage.json ]; then
+            echo "autosweep_coverage.json missing"
+            exit 1
+          fi
+          FAILED=$(jq -r '.enrichmentFailed // 0' autosweep_coverage.json)
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Enrichment failed for $FAILED batch(es)"
+            exit 1
+          fi
+
       - name: Read counts
         id: counts
         run: |
@@ -68,12 +81,12 @@ jobs:
           git add -A -- AppList.json AppList_part*.json
           if ! git diff --cached --quiet; then
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            git commit -m "Auto sweep – added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} – $TIMESTAMP"
+            git commit -m "Auto sweep - added ${{ steps.counts.outputs.added }} apps, overwritten ${{ steps.counts.outputs.overwritten }} - $TIMESTAMP"
             git fetch origin main
             if ! git rebase origin/main; then
-              git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
-              git add -A -- AppList.json AppList_part*.json
-              git rebase --continue
+              git rebase --abort || true
+              echo "Concurrent branch update detected. Refusing automatic overwrite."
+              exit 1
             fi
             git push origin HEAD:main
           else
@@ -101,14 +114,24 @@ jobs:
             ADDED=$(cat ../code/new_apps_count.txt)
             OVERWRITTEN=$(cat ../code/overwritten_count.txt)
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            git commit -m "Auto sweep (apps branch) – added $ADDED apps, overwritten $OVERWRITTEN – $TIMESTAMP"
+            git commit -m "Auto sweep (apps branch) - added $ADDED apps, overwritten $OVERWRITTEN - $TIMESTAMP"
             git fetch origin apps
             if ! git rebase origin/apps; then
-              git checkout --theirs -- AppList.json AppList_part*.json 2>/dev/null || true
-              git add -A -- AppList.json AppList_part*.json
-              git rebase --continue
+              git rebase --abort || true
+              echo "Concurrent branch update detected. Refusing automatic overwrite."
+              exit 1
             fi
             git push origin HEAD:apps
           else
             echo "No changes."
           fi
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-sweep-diagnostics-${{ github.run_id }}
+          path: |
+            code/autosweep_coverage.json
+            code/new_apps_count.txt
+            code/overwritten_count.txt

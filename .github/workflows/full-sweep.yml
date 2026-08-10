@@ -41,7 +41,7 @@ jobs:
           fi
 
       - name: Checkout OV-AppList code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 3vil3vo/OV-AppList
           token: ${{ secrets.OV_DATA_PAT }}
@@ -49,7 +49,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout OV-Data main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 3vil3vo/OV-Data
           token: ${{ secrets.OV_DATA_PAT }}
@@ -58,7 +58,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout OV-PICS
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 3vil3vo/OV-PICS
           token: ${{ secrets.OV_DATA_PAT }}
@@ -67,7 +67,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
