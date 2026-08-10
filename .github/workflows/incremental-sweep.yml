@@ -100,17 +100,16 @@ jobs:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
         run: |
           cd code
-          git clone --single-branch --branch apps "https://x-access-token:${OV_DATA_PAT}@github.com/3vil3vo/OV-Data.git" ../ovdata
-          shopt -s nullglob
-          rm -f ../ovdata/AppList.json ../ovdata/AppList_part*.json
-          if ls AppList.json AppList_part*.json >/dev/null 2>&1; then
-            cp AppList.json ../ovdata/ 2>/dev/null || true
-            cp AppList_part*.json ../ovdata/ 2>/dev/null || true
-          fi
           cd ../ovdata
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin apps
+          git checkout apps
+          git reset --hard origin/apps
           shopt -s nullglob
+          rm -f AppList.json AppList_part*.json
+          cp ../code/AppList.json . 2>/dev/null || true
+          cp ../code/AppList_part*.json . 2>/dev/null || true
           git add -A -- AppList.json AppList_part*.json
           if ! git diff --cached --quiet; then
             ADDED=$(cat ../code/new_apps_count.txt)
@@ -132,7 +131,7 @@ jobs:
 
       - name: Upload diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: auto-sweep-diagnostics-${{ github.run_id }}
           path: |
