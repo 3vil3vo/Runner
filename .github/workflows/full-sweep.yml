@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pics-sweep-diagnostics-${{ github.run_id }}
           if-no-files-found: warn
@@ -148,6 +148,9 @@ jobs:
 
           TIMESTAMP="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
           git commit -m "Full PICS sweep - validated raw snapshot - ${TIMESTAMP}"
+
+          git reset --hard HEAD
+          git clean -fd
 
           git fetch origin main
 
