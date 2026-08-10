@@ -214,6 +214,7 @@ jobs:
           TIMESTAMP="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
           git commit -m "AppList update - added ${{ steps.sweep.outputs.added }}, overwritten ${{ steps.sweep.outputs.overwritten }} - ${TIMESTAMP}"
 
+          git reset --hard HEAD
           git clean -fd
           git fetch origin main
 
@@ -259,6 +260,8 @@ jobs:
           TIMESTAMP="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
           git commit -m "AppList update - added ${{ steps.sweep.outputs.added }}, overwritten ${{ steps.sweep.outputs.overwritten }} - ${TIMESTAMP}"
 
+          git reset --hard HEAD
+          git clean -fd
           git fetch origin apps
 
           if ! git rebase origin/apps; then
