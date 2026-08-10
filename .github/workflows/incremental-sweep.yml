@@ -112,8 +112,8 @@ jobs:
           cp ../code/AppList_part*.json . 2>/dev/null || true
           git add -A -- AppList.json AppList_part*.json
           if ! git diff --cached --quiet; then
-            ADDED=$(cat ../code/new_apps_count.txt)
-            OVERWRITTEN=$(cat ../code/overwritten_count.txt)
+            ADDED="${{ steps.counts.outputs.added }}"
+            OVERWRITTEN="${{ steps.counts.outputs.overwritten }}"
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             git commit -m "Auto sweep (apps branch) - added $ADDED apps, overwritten $OVERWRITTEN - $TIMESTAMP"
             git reset --hard HEAD
