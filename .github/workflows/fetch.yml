@@ -48,15 +48,13 @@ jobs:
 
       - name: Install dependencies
         working-directory: OV-DataSuite/scripts
-        run: |
-          npm ci
-          npm install undici --no-save
+        run: npm ci
 
       - name: Clone OV-PICS and validate snapshot
         env:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
         run: |
-          git clone --depth=1 "https://${OV_DATA_PAT}@github.com/3vil3vo/OV-PICS.git" OV-DataSuite/ov-pics-clone
+          git clone -q --depth=1 "https://${OV_DATA_PAT}@github.com/3vil3vo/OV-PICS.git" OV-DataSuite/ov-pics-clone
           cd OV-DataSuite/ov-pics-clone
           test -f manifest.json
           test -f coverage.json
@@ -113,7 +111,6 @@ jobs:
           [ -f output_data/unmapped_depot_ids.json ] && PATHS+=(output_data/unmapped_depot_ids.json)
           [ -d cache ] && PATHS+=(cache)
           if [ ${#PATHS[@]} -eq 0 ]; then
-            echo "Nothing to commit locally."
             exit 0
           fi
           find cache -name "*.tmp" -delete 2>/dev/null
@@ -123,12 +120,9 @@ jobs:
             git fetch origin main
             if ! git rebase --autostash origin/main; then
               git rebase --abort || true
-              echo "Concurrent branch update detected. Refusing automatic overwrite."
               exit 1
             fi
-            git push --progress origin HEAD:main
-          else
-            echo "No local changes to commit."
+            git push -q origin HEAD:main
           fi
 
       - name: Commit and push depot keys and tokens to OV-Data
@@ -137,17 +131,17 @@ jobs:
           OV_DATA_PAT: ${{ secrets.OV_DATA_PAT }}
         working-directory: OV-DataSuite
         run: |
-          git clone "https://${OV_DATA_PAT}@github.com/3vil3vo/OV-Data.git" ov-data-clone
+          git clone -q "https://${OV_DATA_PAT}@github.com/3vil3vo/OV-Data.git" ov-data-clone
           cp input_data/depot_keys.json ov-data-clone/depot_keys.json
           cp input_data/pics_access_tokens.json ov-data-clone/pics_access_tokens.json
           cd ov-data-clone
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          ADDED=$(jq '.newIdsCount // 0' ../run_summary.json 2>/dev/null || echo "0")
-          TOKENS=$(jq '.tokensAdded // 0' ../run_summary.json 2>/dev/null || echo "0")
-          INVALID=$(jq '.invalidCount // 0' ../run_summary.json 2>/dev/null || echo "0")
-          DEPOT_COUNT=$(jq 'length' depot_keys.json)
-          TOKEN_COUNT=$(jq 'length' pics_access_tokens.json)
+          ADDED=$(jq -r '.newIdsCount // 0' ../run_summary.json 2>/dev/null || echo "0")
+          TOKENS=$(jq -r '.tokensAdded // 0' ../run_summary.json 2>/dev/null || echo "0")
+          INVALID=$(jq -r '.invalidCount // 0' ../run_summary.json 2>/dev/null || echo "0")
+          DEPOT_COUNT=$(jq -r '.finalDepotCount // length' ../run_summary.json 2>/dev/null || jq 'length' depot_keys.json)
+          TOKEN_COUNT=$(jq -r '.finalTokenCount // ((.Apps | length // 0) + (.Packages | length // 0))' ../run_summary.json 2>/dev/null || jq '((.Apps | length // 0) + (.Packages | length // 0))' pics_access_tokens.json)
           git add depot_keys.json pics_access_tokens.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: +${ADDED} keys, +${TOKENS} tokens, -${INVALID} invalid keys -> now ${DEPOT_COUNT} keys, ${TOKEN_COUNT} tokens"
@@ -155,13 +149,10 @@ jobs:
             if git rev-parse --verify origin/main >/dev/null 2>&1; then
               if ! git rebase --autostash origin/main; then
                 git rebase --abort || true
-                echo "Concurrent branch update detected. Refusing automatic overwrite."
                 exit 1
               fi
             fi
-            git push origin HEAD:main
-          else
-            echo "No changes to push to OV-Data."
+            git push -q origin HEAD:main
           fi
 
       - name: Write job summary
