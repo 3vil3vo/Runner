@@ -109,6 +109,8 @@ jobs:
           [ -f output_data/blacklist.json ] && PATHS+=(output_data/blacklist.json)
           [ -f output_data/flagged.json ] && PATHS+=(output_data/flagged.json)
           [ -f output_data/changelog.md ] && PATHS+=(output_data/changelog.md)
+          [ -f output_data/app_ids_in_depot_keys.json ] && PATHS+=(output_data/app_ids_in_depot_keys.json)
+          [ -f output_data/unmapped_depot_ids.json ] && PATHS+=(output_data/unmapped_depot_ids.json)
           [ -d cache ] && PATHS+=(cache)
           if [ ${#PATHS[@]} -eq 0 ]; then
             echo "Nothing to commit locally."
