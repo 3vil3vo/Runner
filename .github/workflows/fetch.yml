@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fetch-diagnostics-${{ github.run_id }}
           path: |
@@ -105,6 +105,7 @@ jobs:
           [ -f input_data/pics_access_tokens.json ] && PATHS+=(input_data/pics_access_tokens.json)
           [ -f input_data/AppList.json ] && PATHS+=(input_data/AppList.json)
           [ -f output_data/blacklist.json ] && PATHS+=(output_data/blacklist.json)
+          [ -f output_data/blacklist_tokens.json ] && PATHS+=(output_data/blacklist_tokens.json)
           [ -f output_data/flagged.json ] && PATHS+=(output_data/flagged.json)
           [ -f output_data/changelog.md ] && PATHS+=(output_data/changelog.md)
           [ -f output_data/app_ids_in_depot_keys.json ] && PATHS+=(output_data/app_ids_in_depot_keys.json)
@@ -138,13 +139,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           ADDED=$(jq -r '.newIdsCount // 0' ../run_summary.json 2>/dev/null || echo "0")
-          TOKENS=$(jq -r '.tokensAdded // 0' ../run_summary.json 2>/dev/null || echo "0")
+          TOKENS=$(jq -r '.finalTokenCount // 0' ../run_summary.json 2>/dev/null || echo "0")
           INVALID=$(jq -r '.invalidCount // 0' ../run_summary.json 2>/dev/null || echo "0")
           DEPOT_COUNT=$(jq -r '.finalDepotCount // length' ../run_summary.json 2>/dev/null || jq 'length' depot_keys.json)
           TOKEN_COUNT=$(jq -r '.finalTokenCount // ((.Apps | length // 0) + (.Packages | length // 0))' ../run_summary.json 2>/dev/null || jq '((.Apps | length // 0) + (.Packages | length // 0))' pics_access_tokens.json)
           git add depot_keys.json pics_access_tokens.json
           if ! git diff --cached --quiet; then
-            git commit -m "chore: +${ADDED} keys, +${TOKENS} tokens, -${INVALID} invalid keys -> now ${DEPOT_COUNT} keys, ${TOKEN_COUNT} tokens"
+            git commit -m "chore: +${ADDED} keys, ${TOKENS} tokens, -${INVALID} invalid keys -> now ${DEPOT_COUNT} keys, ${TOKEN_COUNT} tokens"
             git fetch origin main 2>/dev/null || true
             if git rev-parse --verify origin/main >/dev/null 2>&1; then
               if ! git rebase --autostash origin/main; then
