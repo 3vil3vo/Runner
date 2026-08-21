@@ -48,7 +48,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: OV-DataSuite/scripts
-        run: npm ci
+        run: |
+          npm ci
+          npm install axios uuid
 
       - name: Clone OV-PICS and validate snapshot
         env:
